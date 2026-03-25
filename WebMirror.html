@@ -12,22 +12,28 @@
       overflow: hidden;
       font-family: system-ui, -apple-system, "Segoe UI", Arial, "Microsoft YaHei", sans-serif;
     }
+
     .wrap {
+      position: relative;
       height: 100%;
       display: grid;
       grid-template-rows: auto 1fr;
     }
+
     header {
+      position: relative;
+      z-index: 2;
       display: flex;
       gap: 8px;
       align-items: center;
       padding: 10px;
-      background: rgba(20,20,20,0.75);
+      background: rgba(20, 20, 20, 0.75);
       color: #fff;
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
     }
-    select, button {
+
+    button {
       background: #1f1f1f;
       color: #fff;
       border: 1px solid #333;
@@ -36,15 +42,29 @@
       font-size: 14px;
       cursor: pointer;
     }
-    button:hover, select:hover { border-color: #666; }
-    .spacer { flex: 1; }
-    .hint { opacity: 0.8; font-size: 12px; white-space: nowrap; }
+
+    button:hover {
+      border-color: #666;
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    .hint {
+      opacity: 0.8;
+      font-size: 12px;
+      white-space: nowrap;
+    }
 
     main {
       position: relative;
-      height: 100%;
       width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
     }
+
     video {
       position: absolute;
       inset: 0;
@@ -54,20 +74,25 @@
       background: #000;
       transform: scaleX(1);
     }
-    video.mirror { transform: scaleX(-1); }
 
-    /* 全屏时隐藏顶部栏（移动鼠标到顶部再显示也可扩展，这里做简单版） */
-    body.fullscreen header { opacity: 0.15; }
-    body.fullscreen header:hover { opacity: 1; }
+    video.mirror {
+      transform: scaleX(-1);
+    }
+
+    body.fullscreen .wrap {
+      grid-template-rows: 1fr;
+    }
+
+    body.fullscreen header {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <select id="cameraSelect" title="选择摄像头"></select>
       <button id="btnMirror" title="镜像翻转">镜像：开</button>
       <button id="btnFullscreen" title="全屏">全屏</button>
-      <button id="btnReload" title="重新枚举设备">刷新设备</button>
       <div class="spacer"></div>
       <div class="hint">
         快捷键：<b>M</b> 镜像 / <b>F</b> 全屏 / <b>Esc</b> 退出全屏
@@ -78,158 +103,114 @@
     </main>
   </div>
 
-<script>
-(() => {
-  const video = document.getElementById('video');
-  const cameraSelect = document.getElementById('cameraSelect');
-  const btnMirror = document.getElementById('btnMirror');
-  const btnFullscreen = document.getElementById('btnFullscreen');
-  const btnReload = document.getElementById('btnReload');
+  <script>
+    (() => {
+      const video = document.getElementById('video');
+      const btnMirror = document.getElementById('btnMirror');
+      const btnFullscreen = document.getElementById('btnFullscreen');
 
-  let currentStream = null;
-  let isMirror = true;
+      let currentStream = null;
+      let isMirror = true;
 
-  function setMirror(on) {
-    isMirror = on;
-    video.classList.toggle('mirror', isMirror);
-    btnMirror.textContent = `镜像：${isMirror ? '开' : '关'}`;
-  }
+      function setMirror(on) {
+        isMirror = on;
+        video.classList.toggle('mirror', isMirror);
+        btnMirror.textContent = `镜像：${isMirror ? '开' : '关'}`;
+      }
 
-  async function stopStream() {
-    if (currentStream) {
-      currentStream.getTracks().forEach(t => t.stop());
-      currentStream = null;
-    }
-    video.srcObject = null;
-  }
+      function getActiveTrack() {
+        return currentStream ? currentStream.getVideoTracks()[0] || null : null;
+      }
 
-  async function startStream(deviceId) {
-    await stopStream();
+      async function stopStream() {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+          currentStream = null;
+        }
+        video.srcObject = null;
+      }
 
-    const constraints = {
-      video: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-        frameRate: { ideal: 30 }
-      },
-      audio: false
-    };
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      currentStream = stream;
-      video.srcObject = stream;
-      await video.play().catch(() => {});
-      // 启动成功后再枚举一次（有些浏览器需要先授权才能拿到设备名）
-      video.onloadedmetadata = () => {
-        console.log(
-          "Camera resolution:",
-          video.videoWidth + "x" + video.videoHeight
-        );
-      };
-      await populateCameras(true);
-    } catch (err) {
-      console.error(err);
-      alert(
-        '无法打开摄像头：\n' +
-        (err && err.name ? `${err.name}: ` : '') +
-        (err && err.message ? err.message : err)
-      );
-    }
-  }
+      async function startStream() {
+        await stopStream();
 
-  async function populateCameras(keepSelection = false) {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const cams = devices.filter(d => d.kind === 'videoinput');
+        const constraints = {
+          video: {
+            width: { ideal: 3840 },
+            height: { ideal: 2160 },
+            frameRate: { ideal: 30 }
+          },
+          audio: false
+        };
 
-    const prev = cameraSelect.value;
-    cameraSelect.innerHTML = '';
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          currentStream = stream;
+          video.srcObject = stream;
+          await video.play().catch(() => {});
 
-    if (cams.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '未发现摄像头';
-      cameraSelect.appendChild(opt);
-      cameraSelect.disabled = true;
-      return;
-    }
+          video.onloadedmetadata = () => {
+            console.log('Camera resolution:', `${video.videoWidth}x${video.videoHeight}`);
+          };
+        } catch (err) {
+          console.error(err);
+          alert(
+            '无法打开摄像头：\n' +
+            (err && err.name ? `${err.name}: ` : '') +
+            (err && err.message ? err.message : err)
+          );
+        }
+      }
 
-    cameraSelect.disabled = false;
+      async function init() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert('当前浏览器不支持摄像头 API，请使用最新版 Edge 或 Chrome。');
+          return;
+        }
 
-    cams.forEach((cam, idx) => {
-      const opt = document.createElement('option');
-      opt.value = cam.deviceId;
-      opt.textContent = cam.label || `摄像头 ${idx + 1}`;
-      cameraSelect.appendChild(opt);
-    });
+        setMirror(true);
+        await startStream();
+      }
 
-    if (keepSelection && prev) {
-      // 如果之前选的还存在就保留
-      const stillExists = [...cameraSelect.options].some(o => o.value === prev);
-      if (stillExists) cameraSelect.value = prev;
-    }
-  }
+      btnMirror.addEventListener('click', () => setMirror(!isMirror));
 
-  async function init() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert('当前浏览器不支持摄像头 API，请用最新版 Edge/Chrome。');
-      return;
-    }
+      btnFullscreen.addEventListener('click', async () => {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          await document.exitFullscreen().catch(() => {});
+        }
+      });
 
-    setMirror(true);
+      document.addEventListener('fullscreenchange', () => {
+        document.body.classList.toggle('fullscreen', !!document.fullscreenElement);
+        btnFullscreen.textContent = document.fullscreenElement ? '退出全屏' : '全屏';
+      });
 
-    // 先尝试枚举（可能拿不到 label，但不影响）
-    await populateCameras();
+      window.addEventListener('keydown', event => {
+        if (
+          event.target &&
+          (event.target.tagName === 'INPUT' || event.target.isContentEditable)
+        ) {
+          return;
+        }
 
-    // 默认启动：优先用当前选择，否则用默认摄像头
-    const initialId = cameraSelect.value || null;
-    await startStream(initialId);
-  }
+        const key = event.key.toLowerCase();
+        if (key === 'm') setMirror(!isMirror);
+        if (key === 'f') btnFullscreen.click();
+      });
 
-  // UI events
-  cameraSelect.addEventListener('change', async () => {
-    await startStream(cameraSelect.value);
-  });
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', async () => {
+          if (!getActiveTrack()) {
+            await startStream();
+          }
+        });
+      }
 
-  btnMirror.addEventListener('click', () => setMirror(!isMirror));
+      window.addEventListener('beforeunload', stopStream);
 
-  btnFullscreen.addEventListener('click', async () => {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      await document.exitFullscreen().catch(() => {});
-    }
-  });
-
-  btnReload.addEventListener('click', async () => {
-    await populateCameras(true);
-  });
-
-  document.addEventListener('fullscreenchange', () => {
-    document.body.classList.toggle('fullscreen', !!document.fullscreenElement);
-    btnFullscreen.textContent = document.fullscreenElement ? '退出全屏' : '全屏';
-  });
-
-  // hotkeys
-  window.addEventListener('keydown', async (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable)) return;
-    const k = e.key.toLowerCase();
-    if (k === 'm') setMirror(!isMirror);
-    if (k === 'f') btnFullscreen.click();
-  });
-
-  // 当设备变动（插拔摄像头）时自动刷新列表
-  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-    navigator.mediaDevices.addEventListener('devicechange', async () => {
-      await populateCameras(true);
-    });
-  }
-
-  // 清理
-  window.addEventListener('beforeunload', stopStream);
-
-  init();
-})();
-</script>
+      init();
+    })();
+  </script>
 </body>
 </html>
