@@ -34,12 +34,19 @@
     }
 
     button {
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
       background: #1f1f1f;
       color: #fff;
       border: 1px solid #333;
       border-radius: 8px;
       padding: 8px 10px;
       font-size: 14px;
+      line-height: 1;
+      white-space: nowrap;
       cursor: pointer;
     }
 
@@ -91,10 +98,11 @@
 <body>
   <div class="wrap">
     <header>
-      <button id="btnMirror" title="镜像翻转">镜像：开</button>
-      <button id="btnFullscreen" title="全屏">全屏</button>
+      <button id="btnMirror" type="button">镜像：开</button>
+      <button id="btnFullscreen" type="button">全屏</button>
+      <button id="btnLanguage" type="button">EN</button>
       <div class="spacer"></div>
-      <div class="hint">
+      <div id="hint" class="hint">
         快捷键：<b>M</b> 镜像 / <b>F</b> 全屏 / <b>Esc</b> 退出全屏
       </div>
     </header>
@@ -105,17 +113,109 @@
 
   <script>
     (() => {
+      const LOCALE_STORAGE_KEY = 'webmirror.locale';
+      const translations = {
+        zh: {
+          htmlLang: 'zh-CN',
+          pageTitle: 'Mirror Cam',
+          mirrorTitle: '镜像翻转',
+          mirrorOn: '镜像：开',
+          mirrorOff: '镜像：关',
+          fullscreenTitle: '全屏',
+          fullscreenEnter: '全屏',
+          fullscreenExit: '退出全屏',
+          languageButton: '中文',
+          languageTitle: '切换语言',
+          hintHtml: '快捷键：<b>M</b> 镜像 / <b>F</b> 全屏 / <b>L</b> 语言 / <b>Esc</b> 退出全屏',
+          unsupportedBrowser: '当前浏览器不支持摄像头 API，请使用最新版 Edge 或 Chrome。',
+          cameraOpenError: '无法打开摄像头：\n',
+          resolutionLabel: '摄像头分辨率:'
+        },
+        en: {
+          htmlLang: 'en',
+          pageTitle: 'Mirror Cam',
+          mirrorTitle: 'Toggle mirror',
+          mirrorOn: 'Mirror: On',
+          mirrorOff: 'Mirror: Off',
+          fullscreenTitle: 'Fullscreen',
+          fullscreenEnter: 'Fullscreen',
+          fullscreenExit: 'Exit Fullscreen',
+          languageButton: 'EN',
+          languageTitle: 'Toggle language',
+          hintHtml: 'Hotkeys: <b>M</b> Mirror / <b>F</b> Fullscreen / <b>L</b> Language / <b>Esc</b> Exit fullscreen',
+          unsupportedBrowser: 'Your browser does not support the camera API. Please use the latest Edge or Chrome.',
+          cameraOpenError: 'Unable to open the camera:\n',
+          resolutionLabel: 'Camera resolution:'
+        }
+      };
+
       const video = document.getElementById('video');
       const btnMirror = document.getElementById('btnMirror');
       const btnFullscreen = document.getElementById('btnFullscreen');
+      const btnLanguage = document.getElementById('btnLanguage');
+      const hint = document.getElementById('hint');
 
       let currentStream = null;
       let isMirror = true;
+      let currentLocale = detectInitialLocale();
+
+      function getSavedLocale() {
+        try {
+          return localStorage.getItem(LOCALE_STORAGE_KEY);
+        } catch {
+          return null;
+        }
+      }
+
+      function saveLocale(locale) {
+        try {
+          localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+        } catch {
+          // Ignore storage failures and keep the current session locale only.
+        }
+      }
+
+      function detectInitialLocale() {
+        const savedLocale = getSavedLocale();
+        if (savedLocale && translations[savedLocale]) {
+          return savedLocale;
+        }
+
+        const languages = navigator.languages && navigator.languages.length
+          ? navigator.languages
+          : [navigator.language || 'en'];
+
+        return languages.some(language => String(language).toLowerCase().startsWith('zh'))
+          ? 'zh'
+          : 'en';
+      }
+
+      function t(key) {
+        return translations[currentLocale][key];
+      }
+
+      function updateTexts() {
+        document.documentElement.lang = t('htmlLang');
+        document.title = t('pageTitle');
+        btnMirror.title = t('mirrorTitle');
+        btnMirror.textContent = isMirror ? t('mirrorOn') : t('mirrorOff');
+        btnFullscreen.title = t('fullscreenTitle');
+        btnFullscreen.textContent = document.fullscreenElement ? t('fullscreenExit') : t('fullscreenEnter');
+        btnLanguage.textContent = t('languageButton');
+        btnLanguage.title = t('languageTitle');
+        hint.innerHTML = t('hintHtml');
+      }
+
+      function toggleLocale() {
+        currentLocale = currentLocale === 'zh' ? 'en' : 'zh';
+        saveLocale(currentLocale);
+        updateTexts();
+      }
 
       function setMirror(on) {
         isMirror = on;
         video.classList.toggle('mirror', isMirror);
-        btnMirror.textContent = `镜像：${isMirror ? '开' : '关'}`;
+        updateTexts();
       }
 
       function getActiveTrack() {
@@ -149,12 +249,12 @@
           await video.play().catch(() => {});
 
           video.onloadedmetadata = () => {
-            console.log('Camera resolution:', `${video.videoWidth}x${video.videoHeight}`);
+            console.log(t('resolutionLabel'), `${video.videoWidth}x${video.videoHeight}`);
           };
         } catch (err) {
           console.error(err);
           alert(
-            '无法打开摄像头：\n' +
+            t('cameraOpenError') +
             (err && err.name ? `${err.name}: ` : '') +
             (err && err.message ? err.message : err)
           );
@@ -162,8 +262,10 @@
       }
 
       async function init() {
+        updateTexts();
+
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          alert('当前浏览器不支持摄像头 API，请使用最新版 Edge 或 Chrome。');
+          alert(t('unsupportedBrowser'));
           return;
         }
 
@@ -172,6 +274,7 @@
       }
 
       btnMirror.addEventListener('click', () => setMirror(!isMirror));
+      btnLanguage.addEventListener('click', toggleLocale);
 
       btnFullscreen.addEventListener('click', async () => {
         if (!document.fullscreenElement) {
@@ -183,7 +286,7 @@
 
       document.addEventListener('fullscreenchange', () => {
         document.body.classList.toggle('fullscreen', !!document.fullscreenElement);
-        btnFullscreen.textContent = document.fullscreenElement ? '退出全屏' : '全屏';
+        updateTexts();
       });
 
       window.addEventListener('keydown', event => {
@@ -197,6 +300,7 @@
         const key = event.key.toLowerCase();
         if (key === 'm') setMirror(!isMirror);
         if (key === 'f') btnFullscreen.click();
+        if (key === 'l') toggleLocale();
       });
 
       if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
